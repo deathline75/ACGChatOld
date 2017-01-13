@@ -220,6 +220,8 @@ public class Server {
 		// the date I connect
 		String date;
 		public boolean handshakeError = false;
+		SecretKey clientSessionKey;
+		Cipher AESCipher;
 
 		// Constructore
 		ClientThread(Socket socket) {
@@ -253,11 +255,11 @@ public class Server {
 				//Decrypt the client session key for use later
 				byte[] decryptedKey = cipher.doFinal(encryptedKey);
 				//Store the decrypted key for use later
-				SecretKey clientSessionKey = new SecretKeySpec(decryptedKey,"AES");
+				clientSessionKey = new SecretKeySpec(decryptedKey,"AES");
 				//Received the encrypted "DONE" message from client
 				byte[] clientEncDone = (byte[]) sInput.readObject();
 				//TODO change to CBC
-				Cipher AESCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
+				AESCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
 				AESCipher.init(Cipher.DECRYPT_MODE, clientSessionKey);
 				//Decrypt the "DONE" message sent by the client using the session key the client sent before
 				byte[] clientDecDone = AESCipher.doFinal(clientEncDone);
@@ -300,9 +302,12 @@ public class Server {
 			while(keepGoing) {
 				// read a String (which is an object)
 				try {
-					cm = (ChatMessage) sInput.readObject();
+					byte[] encText = (byte[]) sInput.readObject();
+					AESCipher.init(Cipher.DECRYPT_MODE, clientSessionKey);
+
+					cm = (ChatMessage) Serializer.deserialize(AESCipher.doFinal(encText));
 				}
-				catch (IOException e) {
+				catch (IOException | InvalidKeyException | IllegalBlockSizeException | BadPaddingException e) {
 					display(username + " Exception reading Streams: " + e);
 					break;
 				}
@@ -366,10 +371,12 @@ public class Server {
 			}
 			// write the message to the stream
 			try {
-				sOutput.writeObject(msg);
+				AESCipher.init(Cipher.ENCRYPT_MODE, clientSessionKey);
+				byte[] encDone = AESCipher.doFinal(msg.getBytes());
+				sOutput.writeObject(encDone);
 			}
 			// if an error occurs, do not abort just inform the user
-			catch(IOException e) {
+			catch(IOException | InvalidKeyException | IllegalBlockSizeException | BadPaddingException e) {
 				display("Error sending message to " + username);
 				display(e.toString());
 			}

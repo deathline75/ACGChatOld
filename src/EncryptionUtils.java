@@ -17,6 +17,13 @@ public class EncryptionUtils {
         return initPrivateKey("ACGChatKeyStore", "1qwer$#@!".toCharArray(),"1qwer$#@!".toCharArray());
     }
 
+    /**
+     *
+     * @param fileName
+     * @param keystorePassword
+     * @param certificatePassword
+     * @return
+     */
     public static PrivateKey initPrivateKey(String fileName, char[] keystorePassword, char[] certificatePassword) {
         //https://stackoverflow.com/questions/3027273/how-to-store-and-load-keys-using-java-security-keystore-class
 
@@ -39,24 +46,32 @@ public class EncryptionUtils {
         return null;
     }
 
+    /**
+     * Loads the default server certificate to send to the client.
+     * @return The default server certificate to send to the client
+     */
     public static X509Certificate loadServerCertificate(){
-        //https://stackoverflow.com/questions/24137463/how-to-load-public-certificate-from-pem-file/24139603
-        try{
-            CertificateFactory factory = CertificateFactory.getInstance("X.509");
-            FileInputStream fis = new FileInputStream("ACGChatServerSigned.cert");
-            X509Certificate cert = (X509Certificate) factory.generateCertificate(fis);
-            fis.close();
-            return cert;
-        }catch (Exception e){
-            e.printStackTrace();
-        }
-        return null;
+        return loadCertificate("ACGChatServerSigned.cert");
     }
 
+    /**
+     * Loads the default certificate authority for verificaition of server certification
+     * @return The default certication authority certificate.
+     */
     public static X509Certificate loadCACertificate(){
+        return loadCertificate("ACGChatCA.cert");
+    }
+
+    /**
+     * https://stackoverflow.com/questions/24137463/how-to-load-public-certificate-from-pem-file/24139603
+     * @param fileName
+     * @return
+     *
+     */
+    public static X509Certificate loadCertificate(String fileName) {
         try{
             CertificateFactory factory = CertificateFactory.getInstance("X.509");
-            FileInputStream fis = new FileInputStream("ACGChatCA.cert");
+            FileInputStream fis = new FileInputStream(fileName);
             X509Certificate cert = (X509Certificate) factory.generateCertificate(fis);
             fis.close();
             return cert;
@@ -66,6 +81,7 @@ public class EncryptionUtils {
         return null;
     }
 
+    //http://stackoverflow.com/questions/6629473/validate-x-509-certificate-agains-concrete-ca-java
     public static void verifyCertificates(X509Certificate CACert, X509Certificate serverCert) throws CertificateException{
 
         if(CACert == null || serverCert == null){

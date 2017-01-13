@@ -1,8 +1,11 @@
 
+import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
+import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.KeyGenerator;
 import java.net.*;
 import java.io.*;
+import java.security.InvalidKeyException;
 import java.security.Key;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
@@ -24,6 +27,8 @@ public class Client  {
 	// the server, the port and the username
 	private String server, username;
 	private int port;
+	private Key AESKey;
+	Cipher AESCipher;
 
 	/*
 	 *  Constructor called by console mode
@@ -89,6 +94,7 @@ public class Client  {
 				disconnect();
 				return false;
 			}
+
 			//Read cert sent by the server
 			X509Certificate serverCert = (X509Certificate) sInput.readObject();
 			//Load CACertificate
@@ -105,7 +111,7 @@ public class Client  {
 			//Creating shared private key
 			KeyGenerator keyGenerator = KeyGenerator.getInstance("AES");
 			keyGenerator.init(256);
-			Key AESKey = keyGenerator.generateKey();
+			AESKey = keyGenerator.generateKey();
 			//Encrypt shared private key with server's Public Key
 			Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
 			cipher.init(Cipher.ENCRYPT_MODE, serverCert.getPublicKey());
@@ -114,7 +120,7 @@ public class Client  {
 
 			//Encrypt "DONE" with AESKey generated above
 			//TODO change to CBC
-			Cipher AESCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
+			AESCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
 			AESCipher.init(Cipher.ENCRYPT_MODE, AESKey);
 			byte[] encDone = AESCipher.doFinal("DONE".getBytes());
 			//Send encrypted "DONE" message to server
@@ -158,9 +164,11 @@ public class Client  {
 	 */
 	void sendMessage(ChatMessage msg) {
 		try {
-			sOutput.writeObject(msg);
+			AESCipher.init(Cipher.ENCRYPT_MODE, AESKey);
+			byte[] encText = AESCipher.doFinal(Serializer.serialize(msg));
+			sOutput.writeObject(encText);
 		}
-		catch(IOException e) {
+		catch(IOException | InvalidKeyException | IllegalBlockSizeException | BadPaddingException e) {
 			display("Exception writing to server: " + e);
 		}
 	}
@@ -279,7 +287,10 @@ public class Client  {
 		public void run() {
 			while(true) {
 				try {
-					String msg = (String) sInput.readObject();
+					byte[] encText = (byte[]) sInput.readObject();
+					AESCipher.init(Cipher.DECRYPT_MODE, AESKey);
+
+					String msg = new String(AESCipher.doFinal(encText));
 					// if console mode print the message and add back the prompt
 					if(cg == null) {
 						System.out.println(msg);
@@ -289,7 +300,7 @@ public class Client  {
 						cg.append(msg);
 					}
 				}
-				catch(IOException e) {
+				catch(IOException | InvalidKeyException | IllegalBlockSizeException | BadPaddingException e) {
 					display("Server has close the connection: " + e);
 					if(cg != null)
 						cg.connectionFailed();
