@@ -77,6 +77,7 @@ public class Client  {
 		// will send as a String. All other messages will be ChatMessage objects
 		try
 		{
+
 			sOutput.writeObject(username);
 		}
 		catch (IOException eIO) {

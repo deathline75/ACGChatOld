@@ -1,5 +1,7 @@
 import java.io.*;
 import java.net.*;
+import java.security.PrivateKey;
+import java.security.cert.X509Certificate;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
@@ -41,6 +43,19 @@ public class Server {
 	}
 
 	public void start() {
+
+		display("Loading private key into server...");
+		// Load server private key.
+		PrivateKey privateKey = EncryptionUtils.initPrivateKey();
+		display("Loaded private key.");
+
+		display("Loading server certificate...");
+		X509Certificate certificate = EncryptionUtils.loadCertificate();
+		display("Server certificate loaded");
+
+		//TODO: remove later
+		// display("Private Key: " + Base64.getEncoder().encodeToString(privateKey.getEncoded()));
+
 		keepGoing = true;
 		/* create socket server and wait for connection requests */
 		try
@@ -58,6 +73,7 @@ public class Server {
 				// if I was asked to stop
 				if(!keepGoing)
 					break;
+
 				ClientThread t = new ClientThread(socket);  // make a thread of it
 				al.add(t);									// save it in the ArrayList
 				t.start();
@@ -207,6 +223,11 @@ public class Server {
 				// create output first
 				sOutput = new ObjectOutputStream(socket.getOutputStream());
 				sInput  = new ObjectInputStream(socket.getInputStream());
+
+
+				//Send "Hello" and Server's Certificate back to client
+
+
 				// read the username
 				username = (String) sInput.readObject();
 				display(username + " just connected.");
