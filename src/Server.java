@@ -1,6 +1,11 @@
+import javax.crypto.*;
+import javax.crypto.spec.SecretKeySpec;
 import java.io.*;
 import java.net.*;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
+import java.security.cert.CertificateEncodingException;
 import java.security.cert.X509Certificate;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -21,6 +26,8 @@ public class Server {
 	private int port;
 	// the boolean that will be turned of to stop the server
 	private boolean keepGoing;
+	private X509Certificate certificate;
+	private PrivateKey privateKey;
 
 
 	/*
@@ -46,11 +53,11 @@ public class Server {
 
 		display("Loading private key into server...");
 		// Load server private key.
-		PrivateKey privateKey = EncryptionUtils.initPrivateKey();
+		privateKey = EncryptionUtils.initPrivateKey();
 		display("Loaded private key.");
 
 		display("Loading server certificate...");
-		X509Certificate certificate = EncryptionUtils.loadCertificate();
+		certificate = EncryptionUtils.loadServerCertificate();
 		display("Server certificate loaded");
 
 		//TODO: remove later
@@ -75,8 +82,10 @@ public class Server {
 					break;
 
 				ClientThread t = new ClientThread(socket);  // make a thread of it
-				al.add(t);									// save it in the ArrayList
-				t.start();
+				if (!t.handshakeError) {
+					al.add(t);									// save it in the ArrayList
+					t.start();
+				}
 			}
 			// I was asked to stop
 			try {
@@ -202,7 +211,7 @@ public class Server {
 		Socket socket;
 		ObjectInputStream sInput;
 		ObjectOutputStream sOutput;
-		// my unique id (easier for deconnection)
+		// my unique id (easier for disconnection)
 		int id;
 		// the Username of the Client
 		String username;
@@ -210,6 +219,7 @@ public class Server {
 		ChatMessage cm;
 		// the date I connect
 		String date;
+		public boolean handshakeError = false;
 
 		// Constructore
 		ClientThread(Socket socket) {
@@ -224,23 +234,63 @@ public class Server {
 				sOutput = new ObjectOutputStream(socket.getOutputStream());
 				sInput  = new ObjectInputStream(socket.getInputStream());
 
-
+				//Receives "HELLO" from Client to initiate SSL handshake
+				if(!sInput.readObject().equals("HELLO")){
+					display("Invalid starting handshake");
+					handshakeError = true;
+					close();
+					return;
+				}
 				//Send "Hello" and Server's Certificate back to client
-
-
+				sOutput.writeObject("HELLO");
+				sOutput.writeObject(certificate);
+				//Send "HELLODONE" to tell the client that everything has been sent
+				sOutput.writeObject("HELLODONE");
+				//Received encrypted key from client
+				byte[] encryptedKey = (byte[])sInput.readObject();
+				Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
+				cipher.init(Cipher.DECRYPT_MODE, privateKey);
+				//Decrypt the client session key for use later
+				byte[] decryptedKey = cipher.doFinal(encryptedKey);
+				//Store the decrypted key for use later
+				SecretKey clientSessionKey = new SecretKeySpec(decryptedKey,"AES");
+				//Received the encrypted "DONE" message from client
+				byte[] clientEncDone = (byte[]) sInput.readObject();
+				//TODO change to CBC
+				Cipher AESCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
+				AESCipher.init(Cipher.DECRYPT_MODE, clientSessionKey);
+				//Decrypt the "DONE" message sent by the client using the session key the client sent before
+				byte[] clientDecDone = AESCipher.doFinal(clientEncDone);
+				if(!new String(clientDecDone).equals("DONE")){
+					display("Invalid starting handshake");
+					handshakeError = true;
+					close();
+					return;
+				}
+				AESCipher.init(Cipher.ENCRYPT_MODE, clientSessionKey);
+				byte[] encDone = AESCipher.doFinal("DONE".getBytes());
+				//Send encrypted "DONE" message to Client
+				sOutput.writeObject(encDone);
 				// read the username
 				username = (String) sInput.readObject();
 				display(username + " just connected.");
 			}
 			catch (IOException e) {
+				e.printStackTrace();
 				display("Exception creating new Input/output Streams: " + e);
 				return;
 			}
 			// have to catch ClassNotFoundException
 			// but I read a String, I am sure it will work
 			catch (ClassNotFoundException e) {
+			} catch (NoSuchPaddingException | NoSuchAlgorithmException | InvalidKeyException e) {
+				e.printStackTrace();
+			} catch (BadPaddingException e) {
+				e.printStackTrace();
+			} catch (IllegalBlockSizeException e) {
+				e.printStackTrace();
 			}
-            date = new Date().toString() + "\n";
+			date = new Date().toString() + "\n";
 		}
 
 		// what will run forever

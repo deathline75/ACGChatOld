@@ -3,6 +3,7 @@ import java.io.InputStream;
 import java.security.Key;
 import java.security.KeyStore;
 import java.security.PrivateKey;
+import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.Base64;
@@ -38,7 +39,7 @@ public class EncryptionUtils {
         return null;
     }
 
-    public static X509Certificate loadCertificate(){
+    public static X509Certificate loadServerCertificate(){
         //https://stackoverflow.com/questions/24137463/how-to-load-public-certificate-from-pem-file/24139603
         try{
             CertificateFactory factory = CertificateFactory.getInstance("X.509");
@@ -51,4 +52,40 @@ public class EncryptionUtils {
         }
         return null;
     }
+
+    public static X509Certificate loadCACertificate(){
+        try{
+            CertificateFactory factory = CertificateFactory.getInstance("X.509");
+            FileInputStream fis = new FileInputStream("ACGChatCA.cert");
+            X509Certificate cert = (X509Certificate) factory.generateCertificate(fis);
+            fis.close();
+            return cert;
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    public static void verifyCertificates(X509Certificate CACert, X509Certificate serverCert) throws CertificateException{
+
+        if(CACert == null || serverCert == null){
+            throw new IllegalArgumentException("Certificate not found");
+        }
+
+        if(!CACert.equals(serverCert)){
+            try{
+                serverCert.verify(CACert.getPublicKey());
+            }catch(Exception e){
+                throw new CertificateException("Certificate not trusted", e);
+            }
+        }
+
+        try{
+            serverCert.checkValidity();
+        }catch (Exception e){
+            throw new CertificateException("Certificate not trusted. It has expired", e);
+        }
+
+    }
+
 }
