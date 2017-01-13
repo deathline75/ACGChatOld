@@ -29,6 +29,9 @@ public class Server {
 	private X509Certificate certificate;
 	private PrivateKey privateKey;
 
+	public static final String INFO_MESSAGE = "[INFO]";
+	public static final String WARNING_MESSAGE = "[WARN]";
+	public static final String ERROR_MESSAGE = "[ERROR]";
 
 	/*
 	 *  server constructor that receive the port to listen to for connection as parameter
@@ -129,12 +132,19 @@ public class Server {
 	/*
 	 * Display an event (not a message) to the console or the GUI
 	 */
-	private void display(String msg) {
-		String time = sdf.format(new Date()) + " " + msg;
+	private void display(String type, String msg) {
+		String time = sdf.format(new Date()) + " - " + type + " " + msg;
 		if(sg == null)
 			System.out.println(time);
 		else
 			sg.appendEvent(time + "\n");
+	}
+
+	/*
+	 * Display an event (not a message) to the console or the GUI
+	 */
+	private void display(String msg) {
+		display(INFO_MESSAGE, msg);
 	}
 	/*
 	 *  to broadcast a message to all Clients
@@ -275,7 +285,7 @@ public class Server {
 				sOutput.writeObject(encDone);
 				// read the username
 				username = (String) sInput.readObject();
-				display(username + " just connected.");
+				display(username + " (" + socket.getRemoteSocketAddress().toString() + ") just connected.");
 			}
 			catch (IOException e) {
 				e.printStackTrace();
@@ -308,7 +318,7 @@ public class Server {
 					cm = (ChatMessage) Serializer.deserialize(AESCipher.doFinal(encText));
 				}
 				catch (IOException | InvalidKeyException | IllegalBlockSizeException | BadPaddingException e) {
-					display(username + " Exception reading Streams: " + e);
+					display( WARNING_MESSAGE, username + " (" + socket.getRemoteSocketAddress().toString() + ") " + " Exception reading Streams: " + e);
 					break;
 				}
 				catch(ClassNotFoundException e2) {
@@ -324,7 +334,7 @@ public class Server {
 					broadcast(username + ": " + message);
 					break;
 				case ChatMessage.LOGOUT:
-					display(username + " disconnected with a LOGOUT message.");
+					display( username + " (" + socket.getRemoteSocketAddress().toString() + ") " + " disconnected with a LOGOUT message.");
 					keepGoing = false;
 					break;
 				case ChatMessage.WHOISIN:
@@ -377,7 +387,7 @@ public class Server {
 			}
 			// if an error occurs, do not abort just inform the user
 			catch(IOException | InvalidKeyException | IllegalBlockSizeException | BadPaddingException e) {
-				display("Error sending message to " + username);
+				display(ERROR_MESSAGE, "Error sending message to " + username + " (" + socket.getRemoteSocketAddress().toString() + ") ");
 				display(e.toString());
 			}
 			return true;

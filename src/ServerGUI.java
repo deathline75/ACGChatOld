@@ -1,6 +1,8 @@
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
 /*
  * The server as a GUI
@@ -131,7 +133,7 @@ public class ServerGUI extends JFrame implements ActionListener, WindowListener 
 			// the server failed
 			stopStart.setText("Start");
 			tPortNumber.setEditable(true);
-			appendEvent("Server crashed\n");
+			appendEvent(new SimpleDateFormat("HH:mm:ss").format(new Date()) + " - [WARNING] Server stopped or crashed\n");
 			server = null;
 		}
 	}
