@@ -284,7 +284,10 @@ public class Server {
 				//Send encrypted "DONE" message to Client
 				sOutput.writeObject(encDone);
 				// read the username
-				username = (String) sInput.readObject();
+				byte[] encUsername = (byte[])sInput.readObject();
+				//Decrypt username
+				AESCipher.init(Cipher.DECRYPT_MODE, clientSessionKey);
+				username = new String(AESCipher.doFinal(encUsername));
 				display(username + " (" + socket.getRemoteSocketAddress().toString() + ") just connected.");
 			}
 			catch (IOException e) {

@@ -135,7 +135,11 @@ public class Client  {
 				disconnect();
 				return false;
 			}
-			sOutput.writeObject(username);
+			//Encrypting username
+			//TODO add password encryption
+			AESCipher.init(Cipher.ENCRYPT_MODE, AESKey);
+			byte[] encUser = AESCipher.doFinal(username.getBytes());
+			sOutput.writeObject(encUser);
 		}
 		catch (Exception e) {
 			display("Exception doing login : " + e);
