@@ -1,14 +1,19 @@
-import javax.crypto.*;
+import javax.crypto.BadPaddingException;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.NoSuchPaddingException;
 import javax.crypto.spec.SecretKeySpec;
-import java.io.*;
-import java.net.*;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
-import java.security.PrivateKey;
-import java.security.cert.CertificateEncodingException;
 import java.security.cert.X509Certificate;
 import java.text.SimpleDateFormat;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Date;
 
 /*
  * The server that can be run both as a console application or a GUI
@@ -27,7 +32,7 @@ public class Server {
 	// the boolean that will be turned of to stop the server
 	private boolean keepGoing;
 	private X509Certificate certificate;
-	private PrivateKey privateKey;
+	private EncryptionUtils.RSAHelper rsaHelper;
 
 	public static final String INFO_MESSAGE = "[INFO]";
 	public static final String WARNING_MESSAGE = "[WARN]";
@@ -56,8 +61,12 @@ public class Server {
 
 		display("Loading private key into server...");
 		// Load server private key.
-		privateKey = EncryptionUtils.initPrivateKey();
-		display("Loaded private key.");
+        try {
+            rsaHelper = new EncryptionUtils.RSAHelper(EncryptionUtils.initPrivateKey());
+        } catch (NoSuchPaddingException | NoSuchAlgorithmException e) {
+            e.printStackTrace();
+        }
+        display("Loaded private key.");
 
 		display("Loading server certificate...");
 		certificate = EncryptionUtils.loadServerCertificate();
@@ -106,7 +115,7 @@ public class Server {
 				}
 			}
 			catch(Exception e) {
-				display("Exception closing the server and clients: " + e);
+				display(WARNING_MESSAGE, "Exception closing the server and clients: " + e);
 			}
 		}
 		// something went bad
@@ -152,7 +161,7 @@ public class Server {
 	private synchronized void broadcast(String message) {
 		// add HH:mm:ss and \n to the message
 		String time = sdf.format(new Date());
-		String messageLf = time + " " + message + "\n";
+		String messageLf = time + " - " + message + "\n";
 		// display message on console or GUI
 		if(sg == null)
 			System.out.print(messageLf);
@@ -230,8 +239,7 @@ public class Server {
 		// the date I connect
 		String date;
 		public boolean handshakeError = false;
-		SecretKey clientSessionKey;
-		Cipher AESCipher;
+		EncryptionUtils.AESHelper aesHelper;
 
 		// Constructore
 		ClientThread(Socket socket) {
@@ -246,7 +254,9 @@ public class Server {
 				sOutput = new ObjectOutputStream(socket.getOutputStream());
 				sInput  = new ObjectInputStream(socket.getInputStream());
 
-				//Receives "HELLO" from Client to initiate SSL handshake
+				/////////////////////////////////////////////////////
+                // START ENCRYPTED CONNECTION HANDSHAKE WITH HELLO //
+                /////////////////////////////////////////////////////
 				if(!sInput.readObject().equals("HELLO")){
 					display("Invalid starting handshake");
 					handshakeError = true;
@@ -258,37 +268,47 @@ public class Server {
 				sOutput.writeObject(certificate);
 				//Send "HELLODONE" to tell the client that everything has been sent
 				sOutput.writeObject("HELLODONE");
+
+				//////////////////////////////////
+                // RECEIVING IV AND SESSION KEY //
+                //////////////////////////////////
+
+                // Decrypt the client Initialization Vector to sync with the client.
+                byte[] decryptedIV = rsaHelper.decrypt((byte[])sInput.readObject());
 				//Received encrypted key from client
 				byte[] encryptedKey = (byte[])sInput.readObject();
-				Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
-				cipher.init(Cipher.DECRYPT_MODE, privateKey);
 				//Decrypt the client session key for use later
-				byte[] decryptedKey = cipher.doFinal(encryptedKey);
+				byte[] decryptedKey = rsaHelper.decrypt(encryptedKey);
 				//Store the decrypted key for use later
-				clientSessionKey = new SecretKeySpec(decryptedKey,"AES");
-				//Received the encrypted "DONE" message from client
+                aesHelper = new EncryptionUtils.AESHelper(new SecretKeySpec(decryptedKey,"AES"), decryptedIV);
+
+                //////////////////////////////////////////
+                // RECEIVING ENCRYPTED DONE FROM CLIENT //
+                //////////////////////////////////////////
 				byte[] clientEncDone = (byte[]) sInput.readObject();
-				//TODO change to CBC
-				AESCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
-				AESCipher.init(Cipher.DECRYPT_MODE, clientSessionKey);
 				//Decrypt the "DONE" message sent by the client using the session key the client sent before
-				byte[] clientDecDone = AESCipher.doFinal(clientEncDone);
+				byte[] clientDecDone = aesHelper.decrypt(clientEncDone);
 				if(!new String(clientDecDone).equals("DONE")){
 					display("Invalid starting handshake");
 					handshakeError = true;
 					close();
 					return;
 				}
-				AESCipher.init(Cipher.ENCRYPT_MODE, clientSessionKey);
-				byte[] encDone = AESCipher.doFinal("DONE".getBytes());
-				//Send encrypted "DONE" message to Client
-				sOutput.writeObject(encDone);
-				// read the username
+
+				///////////////////////////////////
+				// SEND ENCRYPTED DONE TO CLIENT //
+                ///////////////////////////////////
+				sOutput.writeObject(aesHelper.encrypt("DONE".getBytes()));
+
+
+				//////////////////////////////////
+				// RECEIVE USERNAME FROM CLIENT //
+                //////////////////////////////////
 				byte[] encUsername = (byte[])sInput.readObject();
-				//Decrypt username
-				AESCipher.init(Cipher.DECRYPT_MODE, clientSessionKey);
-				username = new String(AESCipher.doFinal(encUsername));
+				// Decrypt username
+				username = new String(aesHelper.decrypt(encUsername));
 				display(username + " (" + socket.getRemoteSocketAddress().toString() + ") just connected.");
+
 			}
 			catch (IOException e) {
 				e.printStackTrace();
@@ -298,14 +318,10 @@ public class Server {
 			// have to catch ClassNotFoundException
 			// but I read a String, I am sure it will work
 			catch (ClassNotFoundException e) {
-			} catch (NoSuchPaddingException | NoSuchAlgorithmException | InvalidKeyException e) {
-				e.printStackTrace();
-			} catch (BadPaddingException e) {
-				e.printStackTrace();
-			} catch (IllegalBlockSizeException e) {
+			} catch (NoSuchPaddingException | NoSuchAlgorithmException | InvalidKeyException | BadPaddingException | IllegalBlockSizeException | InvalidAlgorithmParameterException e) {
 				e.printStackTrace();
 			}
-			date = new Date().toString() + "\n";
+            date = new Date().toString() + "\n";
 		}
 
 		// what will run forever
@@ -316,12 +332,11 @@ public class Server {
 				// read a String (which is an object)
 				try {
 					byte[] encText = (byte[]) sInput.readObject();
-					AESCipher.init(Cipher.DECRYPT_MODE, clientSessionKey);
-
-					cm = (ChatMessage) Serializer.deserialize(AESCipher.doFinal(encText));
+					cm = (ChatMessage) Serializer.deserialize(aesHelper.decrypt(encText));
 				}
-				catch (IOException | InvalidKeyException | IllegalBlockSizeException | BadPaddingException e) {
+				catch (IOException | InvalidKeyException | IllegalBlockSizeException | BadPaddingException | InvalidAlgorithmParameterException e) {
 					display( WARNING_MESSAGE, username + " (" + socket.getRemoteSocketAddress().toString() + ") " + " Exception reading Streams: " + e);
+					e.printStackTrace();
 					break;
 				}
 				catch(ClassNotFoundException e2) {
@@ -384,14 +399,13 @@ public class Server {
 			}
 			// write the message to the stream
 			try {
-				AESCipher.init(Cipher.ENCRYPT_MODE, clientSessionKey);
-				byte[] encDone = AESCipher.doFinal(msg.getBytes());
-				sOutput.writeObject(encDone);
+				sOutput.writeObject(aesHelper.encrypt(msg.getBytes()));
 			}
 			// if an error occurs, do not abort just inform the user
-			catch(IOException | InvalidKeyException | IllegalBlockSizeException | BadPaddingException e) {
+			catch(IOException | InvalidKeyException | IllegalBlockSizeException | BadPaddingException | InvalidAlgorithmParameterException e) {
 				display(ERROR_MESSAGE, "Error sending message to " + username + " (" + socket.getRemoteSocketAddress().toString() + ") ");
 				display(e.toString());
+				e.printStackTrace();
 			}
 			return true;
 		}

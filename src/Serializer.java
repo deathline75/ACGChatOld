@@ -1,5 +1,8 @@
 import java.io.*;
 
+/**
+ * http://stackoverflow.com/questions/5837698/converting-any-object-to-a-byte-array-in-java
+ */
 public class Serializer {
 
     public static byte[] serialize(Object obj) throws IOException {

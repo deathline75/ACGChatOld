@@ -1,15 +1,16 @@
 
 import javax.crypto.BadPaddingException;
-import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.KeyGenerator;
-import java.net.*;
-import java.io.*;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.net.Socket;
+import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
-import java.security.Key;
-import java.security.cert.CertificateFactory;
+import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
-import java.util.*;
+import java.util.Scanner;
 
 /*
  * The Client that can be run both as a console or a GUI
@@ -27,8 +28,9 @@ public class Client  {
 	// the server, the port and the username
 	private String server, username;
 	private int port;
-	private Key AESKey;
-	Cipher AESCipher;
+//	private Key AESKey;
+//	Cipher AESCipher;
+	private EncryptionUtils.AESHelper aesHelper;
 
 	/*
 	 *  Constructor called by console mode
@@ -57,17 +59,19 @@ public class Client  {
 	 * To start the dialog
 	 */
 	public boolean start() {
+	    display("[SYSTEM] Connecting to server...");
 		// try to connect to the server
 		try {
 			socket = new Socket(server, port);
 		}
 		// if it failed not much I can so
 		catch(Exception ec) {
-			display("Error connecting to server:" + ec);
+			display("[SYSTEM] Error connecting to server: " + ec);
+			ec.printStackTrace();
 			return false;
 		}
 
-		String msg = "Connection accepted " + socket.getInetAddress() + ":" + socket.getPort();
+		String msg = "[SYSTEM] Connection accepted: " + socket.getInetAddress() + ":" + socket.getPort();
 		display(msg);
 
 		/* Creating both Data Stream */
@@ -85,64 +89,79 @@ public class Client  {
 		// will send as a String. All other messages will be ChatMessage objects
 		try
 		{
-			//Send "HELLO" to server to start SSL connection
+		    ///////////////////////////////////////////////
+			// Send "HELLO" to server to start handshake //
+            ///////////////////////////////////////////////
 			sOutput.writeObject("HELLO");
 
-			//Read "HELLO" sent by the server
+			////////////////////////////////////
+			//Read "HELLO" sent by the server //
+            ////////////////////////////////////
 			if(!sInput.readObject().equals("HELLO")){
 				display("Invalid starting handshake");
-				disconnect();
+				disconnect(); // Just disconnect the user if failed.
 				return false;
 			}
 
-			//Read cert sent by the server
+			/////////////////////////////////////////
+			// Read certificate sent by the server //
+            /////////////////////////////////////////
 			X509Certificate serverCert = (X509Certificate) sInput.readObject();
-			//Load CACertificate
+			// Load CACertificate
 			X509Certificate CACertificate = EncryptionUtils.loadCACertificate();
-			//verify that the server cert comes from the Certificate Authority
+			// Verify that the server cert comes from the Certificate Authority
 			EncryptionUtils.verifyCertificates(CACertificate, serverCert);
-			//Read "HELLODONE" sent by the server
+
+			///////////////////////////////////////
+			// Read HELLODONE sent by the server //
+            ///////////////////////////////////////
 			if(!sInput.readObject().equals("HELLODONE")){
 				display("Invalid starting handshake");
 				disconnect();
 				return false;
 			}
 
-			//Creating shared private key
-			KeyGenerator keyGenerator = KeyGenerator.getInstance("AES");
-			keyGenerator.init(256);
-			AESKey = keyGenerator.generateKey();
-			//Encrypt shared private key with server's Public Key
-			Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
-			cipher.init(Cipher.ENCRYPT_MODE, serverCert.getPublicKey());
-			byte[] encryptedKey = cipher.doFinal(AESKey.getEncoded());
-			sOutput.writeObject(encryptedKey);
+			//////////////////////////////////////////
+            // GENERATE AND SEND IV AND SESSION KEY //
+            //////////////////////////////////////////
+			EncryptionUtils.RSAHelper rsaHelper = new EncryptionUtils.RSAHelper(serverCert.getPublicKey());
+			// Generate a random Initialization Vector for AES/CBC
+            byte[] iv = new byte[16];
+            SecureRandom secureRandom = new SecureRandom();
+            secureRandom.nextBytes(iv);
+            // Send the Initialization Vector to the server so that they can have the same IV.
+            sOutput.writeObject(rsaHelper.encrypt(iv));
+            // Creating shared private key
+            KeyGenerator keyGenerator = KeyGenerator.getInstance("AES");
+            keyGenerator.init(256);
+            aesHelper = new EncryptionUtils.AESHelper(keyGenerator.generateKey(), iv);
+            //Encrypt shared private key with server's Public Key
+            sOutput.writeObject(rsaHelper.encrypt(aesHelper.getSecretKey().getEncoded()));
 
-			//Encrypt "DONE" with AESKey generated above
-			//TODO change to CBC
-			AESCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
-			AESCipher.init(Cipher.ENCRYPT_MODE, AESKey);
-			byte[] encDone = AESCipher.doFinal("DONE".getBytes());
-			//Send encrypted "DONE" message to server
-			sOutput.writeObject(encDone);
+			///////////////////////////////////
+			// Send encrypted DONE to server //
+            ///////////////////////////////////
+			sOutput.writeObject(aesHelper.encrypt("DONE".getBytes()));
 
+            //////////////////////////////
+            // DECRYPT DONE FROM SERVER //
+            //////////////////////////////
 			byte[] serverEncDone = (byte[]) sInput.readObject();
-			AESCipher.init(Cipher.DECRYPT_MODE, AESKey);
-			//Decrypt the "DONE" message sent by the server using the session key generated by the client
-			byte[] serverDecDone = AESCipher.doFinal(serverEncDone);
-			if(!new String(serverDecDone).equals("DONE")){
+			if(!new String(aesHelper.decrypt(serverEncDone)).equals("DONE")){
 				display("Invalid starting handshake");
 				disconnect();
 				return false;
 			}
-			//Encrypting username
+
+			/////////////////////////
+			// Encrypting username //
+            /////////////////////////
 			//TODO add password encryption
-			AESCipher.init(Cipher.ENCRYPT_MODE, AESKey);
-			byte[] encUser = AESCipher.doFinal(username.getBytes());
-			sOutput.writeObject(encUser);
+			sOutput.writeObject(aesHelper.encrypt(username.getBytes()));
 		}
 		catch (Exception e) {
 			display("Exception doing login : " + e);
+            e.printStackTrace();
 			disconnect();
 			return false;
 		}
@@ -168,14 +187,13 @@ public class Client  {
 	 */
 	void sendMessage(ChatMessage msg) {
 		try {
-			AESCipher.init(Cipher.ENCRYPT_MODE, AESKey);
-			byte[] encText = AESCipher.doFinal(Serializer.serialize(msg));
-			sOutput.writeObject(encText);
+			sOutput.writeObject(aesHelper.encrypt(Serializer.serialize(msg)));
 		}
-		catch(IOException | InvalidKeyException | IllegalBlockSizeException | BadPaddingException e) {
+		catch(IOException | InvalidKeyException | IllegalBlockSizeException | BadPaddingException | InvalidAlgorithmParameterException e) {
 			display("Exception writing to server: " + e);
+			e.printStackTrace();
 		}
-	}
+    }
 
 	/*
 	 * When something goes wrong
@@ -184,16 +202,13 @@ public class Client  {
 	private void disconnect() {
 		try {
 			if(sInput != null) sInput.close();
-		}
-		catch(Exception e) {} // not much else I can do
+		} catch(Exception e) {} // not much else I can do
 		try {
 			if(sOutput != null) sOutput.close();
-		}
-		catch(Exception e) {} // not much else I can do
+		} catch(Exception e) {} // not much else I can do
         try{
 			if(socket != null) socket.close();
-		}
-		catch(Exception e) {} // not much else I can do
+		} catch(Exception e) {} // not much else I can do
 
 		// inform the GUI
 		if(cg != null)
@@ -292,9 +307,7 @@ public class Client  {
 			while(true) {
 				try {
 					byte[] encText = (byte[]) sInput.readObject();
-					AESCipher.init(Cipher.DECRYPT_MODE, AESKey);
-
-					String msg = new String(AESCipher.doFinal(encText));
+					String msg = new String(aesHelper.decrypt(encText));
 					// if console mode print the message and add back the prompt
 					if(cg == null) {
 						System.out.println(msg);
@@ -304,8 +317,8 @@ public class Client  {
 						cg.append(msg);
 					}
 				}
-				catch(IOException | InvalidKeyException | IllegalBlockSizeException | BadPaddingException e) {
-					display("Server has close the connection: " + e);
+				catch(IOException | InvalidKeyException | IllegalBlockSizeException | BadPaddingException | InvalidAlgorithmParameterException e) {
+					display("[SYSTEM] Server has close the connection: " + e);
 					if(cg != null)
 						cg.connectionFailed();
 					break;
