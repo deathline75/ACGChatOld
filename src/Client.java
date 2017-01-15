@@ -23,7 +23,7 @@ public class Client {
     private Socket socket;
 
     // if I use a GUI or not
-    private ClientGUI cg;
+    private ClientGUIMain cg;
 
     // the server, the port and the username
     private String server, username;
@@ -47,7 +47,7 @@ public class Client {
      * Constructor call when used from a GUI
      * in console mode the ClienGUI parameter is null
      */
-    Client(String server, int port, String username, ClientGUI cg) {
+    Client(String server, int port, String username, ClientGUIMain cg) {
         this.server = server;
         this.port = port;
         this.username = username;
@@ -175,7 +175,7 @@ public class Client {
         if (cg == null)
             System.out.println(msg);      // println in console mode
         else
-            cg.append(msg + "\n");        // append to the ClientGUI JTextArea (or whatever)
+            cg.append(msg + "\n");        // append to the ClientGUIMain JTextArea (or whatever)
     }
 
     /*

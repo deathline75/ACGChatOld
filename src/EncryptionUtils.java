@@ -25,6 +25,7 @@ public class EncryptionUtils {
      * @param certificatePassword
      * @return
      */
+
     public static PrivateKey initPrivateKey(String fileName, char[] keystorePassword, String alias, char[] certificatePassword) throws KeyStoreException, IOException, CertificateException, NoSuchAlgorithmException, UnrecoverableEntryException {
         //https://stackoverflow.com/questions/3027273/how-to-store-and-load-keys-using-java-security-keystore-class
 
