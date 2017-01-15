@@ -79,7 +79,7 @@ public class Client {
             sInput = new ObjectInputStream(socket.getInputStream());
             sOutput = new ObjectOutputStream(socket.getOutputStream());
         } catch (IOException eIO) {
-            display("Exception creating new Input/output Streams: " + eIO);
+            display("[SYSTEM] Exception creating new Input/output Streams: " + eIO);
             return false;
         }
 
@@ -95,7 +95,7 @@ public class Client {
             //Read "HELLO" sent by the server //
             ////////////////////////////////////
             if (!sInput.readObject().equals("HELLO")) {
-                display("Invalid starting handshake");
+                display("[SYSTEM] Invalid starting handshake");
                 disconnect(); // Just disconnect the user if failed.
                 return false;
             }
@@ -113,7 +113,7 @@ public class Client {
             // Read HELLODONE sent by the server //
             ///////////////////////////////////////
             if (!sInput.readObject().equals("HELLODONE")) {
-                display("Invalid starting handshake");
+                display("[SYSTEM] Invalid starting handshake");
                 disconnect();
                 return false;
             }
@@ -145,7 +145,7 @@ public class Client {
             //////////////////////////////
             byte[] serverEncDone = (byte[]) sInput.readObject();
             if (!new String(aesHelper.decrypt(serverEncDone)).equals("DONE")) {
-                display("Invalid starting handshake");
+                display("[SYSTEM] Invalid starting handshake");
                 disconnect();
                 return false;
             }
@@ -156,7 +156,7 @@ public class Client {
             //TODO add password encryption
             sOutput.writeObject(aesHelper.encrypt(username.getBytes()));
         } catch (Exception e) {
-            display("Exception doing login : " + e);
+            display("[SYSTEM] Exception doing login : " + e);
             e.printStackTrace();
             disconnect();
             return false;
@@ -185,7 +185,7 @@ public class Client {
         try {
             sOutput.writeObject(aesHelper.encrypt(Serializer.serialize(msg)));
         } catch (IOException | InvalidKeyException | IllegalBlockSizeException | BadPaddingException | InvalidAlgorithmParameterException e) {
-            display("Exception writing to server: " + e);
+            display("[SYSTEM] Exception writing to server: " + e);
             e.printStackTrace();
         }
     }
@@ -207,6 +207,8 @@ public class Client {
             if (socket != null) socket.close();
         } catch (Exception e) {
         } // not much else I can do
+
+        display("[SYSTEM] Disconnected from the server.");
 
         // inform the GUI
         if (cg != null)

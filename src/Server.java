@@ -7,9 +7,8 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.security.InvalidAlgorithmParameterException;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
+import java.security.*;
+import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -63,13 +62,21 @@ public class Server {
         // Load server private key.
         try {
             rsaHelper = new EncryptionUtils.RSAHelper(EncryptionUtils.initPrivateKey());
-        } catch (NoSuchPaddingException | NoSuchAlgorithmException e) {
+        } catch (NoSuchPaddingException | NoSuchAlgorithmException | CertificateException | KeyStoreException | UnrecoverableEntryException | IOException e) {
+            display(ERROR_MESSAGE, "Cannot load private key into server: " + e);
             e.printStackTrace();
+            return;
         }
         display("Loaded private key.");
 
         display("Loading server certificate...");
-        certificate = EncryptionUtils.loadServerCertificate();
+        try {
+            certificate = EncryptionUtils.loadServerCertificate();
+        } catch (CertificateException | IOException e) {
+            display(ERROR_MESSAGE, "Cannot load server certificate into server: " + e);
+            e.printStackTrace();
+            return;
+        }
         display("Server certificate loaded");
 
         //TODO: remove later

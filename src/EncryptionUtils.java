@@ -1,6 +1,8 @@
 import javax.crypto.*;
 import javax.crypto.spec.IvParameterSpec;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.io.InputStream;
 import java.security.*;
 import java.security.cert.CertificateException;
@@ -13,7 +15,7 @@ import java.util.Base64;
  */
 public class EncryptionUtils {
 
-    public static PrivateKey initPrivateKey() {
+    public static PrivateKey initPrivateKey() throws CertificateException, UnrecoverableEntryException, NoSuchAlgorithmException, KeyStoreException, IOException {
         return initPrivateKey("ACGChatKeyStore", "1qwer$#@!".toCharArray(), "ACGChatServerSigned", "1qwer$#@!".toCharArray());
     }
 
@@ -23,14 +25,13 @@ public class EncryptionUtils {
      * @param certificatePassword
      * @return
      */
-    public static PrivateKey initPrivateKey(String fileName, char[] keystorePassword, String alias, char[] certificatePassword) {
+    public static PrivateKey initPrivateKey(String fileName, char[] keystorePassword, String alias, char[] certificatePassword) throws KeyStoreException, IOException, CertificateException, NoSuchAlgorithmException, UnrecoverableEntryException {
         //https://stackoverflow.com/questions/3027273/how-to-store-and-load-keys-using-java-security-keystore-class
 
         if (fileName == null || keystorePassword == null || certificatePassword == null) {
             throw new NullPointerException("All arguments are required.");
         }
 
-        try {
             KeyStore ks = KeyStore.getInstance("JKS");
             InputStream readStream = new FileInputStream(fileName);
             ks.load(readStream, keystorePassword);
@@ -39,10 +40,6 @@ public class EncryptionUtils {
             PrivateKey privateKey = pkEntry.getPrivateKey();
             readStream.close();
             return privateKey;
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return null;
     }
 
     /**
@@ -50,7 +47,7 @@ public class EncryptionUtils {
      *
      * @return The default server certificate to send to the client
      */
-    public static X509Certificate loadServerCertificate() {
+    public static X509Certificate loadServerCertificate() throws CertificateException, IOException {
         return loadCertificate("ACGChatServerSigned.cert");
     }
 
@@ -59,7 +56,7 @@ public class EncryptionUtils {
      *
      * @return The default certication authority certificate.
      */
-    public static X509Certificate loadCACertificate() {
+    public static X509Certificate loadCACertificate() throws CertificateException, IOException {
         return loadCertificate("ACGChatCA.cert");
     }
 
@@ -69,17 +66,12 @@ public class EncryptionUtils {
      * @param fileName
      * @return
      */
-    public static X509Certificate loadCertificate(String fileName) {
-        try {
-            CertificateFactory factory = CertificateFactory.getInstance("X.509");
-            FileInputStream fis = new FileInputStream(fileName);
-            X509Certificate cert = (X509Certificate) factory.generateCertificate(fis);
-            fis.close();
-            return cert;
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return null;
+    public static X509Certificate loadCertificate(String fileName) throws CertificateException, IOException {
+        CertificateFactory factory = CertificateFactory.getInstance("X.509");
+        FileInputStream fis = new FileInputStream(fileName);
+        X509Certificate cert = (X509Certificate) factory.generateCertificate(fis);
+        fis.close();
+        return cert;
     }
 
     //http://stackoverflow.com/questions/6629473/validate-x-509-certificate-agains-concrete-ca-java
